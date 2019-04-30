@@ -526,9 +526,4 @@ for link in df_unique['link'][24465:]:
         print(link + 'error')
         continue 
 #-----------------------------------------------------------------------------#
-
-x = df_all.sort_values(by=['link','play_index'])
-
-
-df['colFromIndex'] = df.index
-df = df.sort_values(by=['count', 'colFromIndex'])
+df_all.sort_values(by=['link','play_index'], inplace=True)
