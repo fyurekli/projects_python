@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import string
+from tqdm import tqdm
+from collections import Counter
 pd.set_option('display.max_columns',None)
 pd.options.display.float_format = '{:.4f}'.format
 #----------------------------------------------------------------------------------------------------------------------#
@@ -8,19 +10,52 @@ pd.options.display.float_format = '{:.4f}'.format
 #df_box = pd.read_csv('nba_analysis/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
 #df_players = pd.read_csv('nba_analysis/data/clean_data/combined/df_players_2001_2019.csv')
 #links = pd.read_csv('nba_analysis/links.csv')
-df_box = pd.read_csv('nba_analysis/data/clean_data/combined/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
-df_raw = pd.read_csv('nba_analysis/data/raw_data/combined/pbp_raw_2001_2019.csv')
-df_players = pd.read_csv('nba_analysis/data/clean_data/combined/df_players_2001_2019.csv')
-links = pd.read_csv('nba_analysis/data/clean_data/combined/links.csv')
+df_box = pd.read_csv('nba_analysis/data/df_box_scores_2004_2014.csv').rename(columns={'links':'link','name':'player'})
+df_pbp_raw = pd.read_csv('nba_analysis/data/df_pbp_2001_2019_raw.csv')
+players = pd.read_csv('nba_analysis/data/df_players_2001_2019.csv')
+links = pd.read_csv('nba_analysis/data/df_links_1979_2019_clean.csv')
 #----------------------------------------------------------------------------------------------------------------------#
+#fix links
 df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
-df_raw['link'] = df_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
+df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 links['link'] = links['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 #----------------------------------------------------------------------------------------------------------------------#
-#df_raw = df_raw.reset_index().rename(columns={'index':'game_index'})
-df_unique = df_raw.drop_duplicates(subset='link').reset_index()
-players = df_players['0'].dropna()
-players = players.unique()
+def fix_players(dataframe):
+    dataframe = dataframe['0'].dropna().unique()
+    return dataframe
+#-----------------------------------------------------------------------------#
+def find_duplicates(dataframe1, dataframe2, column):
+    dataframe1 = dataframe1[column].unique().tolist()
+    dataframe2 = dataframe2[column].unique().tolist()
+    dfs = dataframe1 + dataframe2
+    counts = Counter(dfs)
+    duplicates = list(set([df for df in dfs if counts[df] > 1]))
+    return duplicates
+#-----------------------------------------------------------------------------#
+def get_iterable_df(dataframe1, dataframe2, column):
+    duplicates = find_duplicates(dataframe1, dataframe2, 'link')
+    dataframe1 = dataframe1[dataframe1['link'].isin(duplicates)]
+    return dataframe1
+#-----------------------------------------------------------------------------#
+def get_unique(dataframe1):
+    df_unique = dataframe1.drop_duplicates(subset='link').reset_index()
+    df_unique = pd.DataFrame(df_unique['link'],columns=['link'])
+    return df_unique
+#-----------------------------------------------------------------------------#
+def missing_dfs(dataframe1, dataframe2):
+    dataframe1 = pd.DataFrame(get_unique(dataframe1), columns=['link'])
+    dataframe2 = pd.DataFrame(get_unique(dataframe2), columns=['link'])
+    res = pd.merge(dataframe1, dataframe2, how='outer', indicator=True)
+    res['df_pbp'] = res['link'][res['_merge'] != 'right_only']
+    res['df_box'] = res['link'][res['_merge'] != 'left_only']
+    #res.drop(['link', '_merge'], axis=1,inplace=True)
+    return res
+#-----------------------------------------------------------------------------#
+players = fix_players(players)
+missing_df = missing_dfs(df_pbp_raw, df_box)
+df_pbp_raw = get_iterable_df(df_pbp_raw, df_box, 'link')
+df_box = get_iterable_df(df_box, df_pbp_raw, 'link')
+df_unique = get_unique(df_pbp_raw)
 #-----------------------------------------------------------------------------#
 def add_blank_rows(df, column, string=None, index_location=None):
     def add_blanks(df, index):
@@ -43,8 +78,7 @@ def add_blank_rows(df, column, string=None, index_location=None):
     if string is None:
         index = [index_location]
         return add_blanks(df, index)
-#-----------------------------------------------------------------------------#
-#df = add_blank_rows(df, 'text', string='Jump')
+
 #-----------------------------------------------------------------------------#
 def remove_strings(dataframe, column, *strings_to_remove):
     strings = []
@@ -54,15 +88,7 @@ def remove_strings(dataframe, column, *strings_to_remove):
     dataframe[column] = dataframe[column].str.replace('|'.join(strings),'',regex=True)
     dataframe[column] = [x.strip() for x in dataframe[column]]
     return dataframe[column]
-#-----------------------------------------------------------------------------#
-#add the following string into the dataframe (string + each letter of the alphabet)        
-#strings_to_remove = ['/players/' + x + '/' for x in (list(string.ascii_lowercase))]
-#strings_to_remove.extend(['colspan="5">','class=','center"','"','<td','td>','<','>','=','bbr-play-score',
-#                          'a href','/a','bbr-play-tie','bbr-play-leadchange', '.html','/'])
-#strings_to_remove.extend(players)
-#strings_to_remove = tuple(strings_to_remove)
 
-#remove_strings(df, 'text', *strings_to_remove)
 #-----------------------------------------------------------------------------#
 def fix_errors(dataframe):
     if link =='http://www.basketball-reference.com/boxscores/pbp/201803170NOP.html':
@@ -144,11 +170,6 @@ def add_quarter(dataframe, column, new_column, *values):
     dataframe = pd.concat([dataframe1, dataframe2],axis=1)
     
     return dataframe
-
-#periods = ('2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime','3rd overtrime',
- #          '4th overtime','5th overtime','6th overtime')
-
-#df = add_quarter(df, 'text', 'period', *periods)
 #-----------------------------------------------------------------------------#
 def add_team_subs(dataframe):
     dataframe['team'] = np.where(dataframe['home_play'].str.contains('by Team'),home_team,
@@ -167,7 +188,6 @@ def add_team_subs(dataframe):
     dataframe['exits_game'] = dataframe['exits_game'].str.strip()
     
     return dataframe
-
 
 #df = add_team_subs(df)
 #delete later
@@ -340,14 +360,13 @@ def pull_data(dataframe):
 def fix_score(dataframe):
     #fix blanks introduced by jump_ball
     dataframe['score'] = [None if x == '' else x for x in dataframe['score']]
-    dataframe['score'].fillna(method='ffill',inplace=True)
-    dataframe['score'].fillna(method='bfill',inplace=True)
+    dataframe['score'] = dataframe['score'].fillna(method='ffill')
+    dataframe['score'] = dataframe['score'].fillna(method='bfill')
     dataframe['score_home'] = dataframe['score'].apply(lambda x: int(x.split('-')[0]))
     dataframe['score_away'] = dataframe['score'].apply(lambda x: int(x.split('-')[1]))
     dataframe['score_diff'] = dataframe['score_home'] - dataframe['score_away']
     return dataframe
 
-#fix_score(df)
 #-----------------------------------------------------------------------------#
 def final_fixes(dataframe):
     dataframe = dataframe[['play_index','period','time','score','score_home','score_away', 'score_diff',
@@ -462,13 +481,16 @@ def change_time(dataframe):
 #-----------------------------------------------------------------------------#
 df_all = pd.DataFrame()
 df_errors = pd.DataFrame()
-for link in df_unique['link'][24465:]:
+
+for link in tqdm(df_unique['link'][0:14]):
     try:
-        df = df_raw[df_raw['link']==link]
+        df = df_pbp_raw[df_pbp_raw['link'].isin([link])]
         df = df.reset_index(drop=True)
+        #set up some global variables
         home_team = df['home_away'][0].split(',')[0]
         away_team = df['home_away'][0].split(', ')[1]
         date = df['date'][0]
+        
         df = pd.DataFrame(df,columns=['text']).reset_index(drop=True)
         df[df['text'].str.contains('timeout',na=False)] = df[df['text'].str.contains('timeout',na=False)].apply(lambda x: x + ' by Team')
         #-----------------------------------------------------------------------------#
@@ -483,41 +505,34 @@ for link in df_unique['link'][24465:]:
         #-----------------------------------------------------------------------------#
         df = fix_errors(df)
         #-----------------------------------------------------------------------------#
-        periods = ('2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime','3rd overtrime',
-                   '4th overtime','5th overtime','6th overtime')
-    
-        df = add_quarter(df, 'text', 'period', *periods)
+        df = add_quarter(df, 'text', 'period', 
+                         '2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime',
+                         '3rd overtrime','4th overtime','5th overtime','6th overtime')
         #-----------------------------------------------------------------------------#
         df = add_team_subs(df)
-        #delete later
-        #df['exits_game'].fillna('',inplace=True)
-        #df['enters_game'].fillna('',inplace=True)
-        #df['exits_game'] = df['exits_game'].apply(lambda x: x.split('.')[0])
-        #df['exits_game'] = [x[:-1] if 'Team' not in x else x for x in df['exits_game']]
-        #df['enters_game'] = df['enters_game'].apply(lambda x: x.split('.')[0])
-        #df['enters_game'] = [x[:-1] if 'Team' not in x else x for x in df['enters_game']]     
-        #df.replace('', np.nan, inplace=True) 
         #-----------------------------------------------------------------------------#
         df = pull_data(df)
         #-----------------------------------------------------------------------------#
-        fix_score(df)
+        df = fix_score(df)
         #-----------------------------------------------------------------------------#
         df = final_fixes(df)
-        #delete:
-        #df['player'] = df['player'].apply(lambda x: x.split('.')[0])
-        #df['player'] = [x[:-1] if 'Team' not in x else x for x in df['player']]
         #-----------------------------------------------------------------------------#
         box = get_starters(df_box)
+        #-----------------------------------------------------------------------------#
         df = merge_dfs(df, box)
+        #-----------------------------------------------------------------------------#
         df = add_home_away(df)
+        #-----------------------------------------------------------------------------#
         df = add_starters(df)
-        columns = ('0','1','2','3','4')
-        fill_it_up(df, *columns)
-        last_step(df)
+        #-----------------------------------------------------------------------------#
+        fill_it_up(df, '0','1','2','3','4')
+        #-----------------------------------------------------------------------------#
+        df = last_step(df)
+        #-----------------------------------------------------------------------------#
         change_time(df)
         #-----------------------------------------------------------------------------#
-        print(str(df_unique[df_unique['link']==link].index[0]) + ' out of ' + str(len(df_unique)))
         df_all = df_all.append(df)
+        #-----------------------------------------------------------------------------#
     except:
         df_error = pd.DataFrame(data = {'row':[df_unique[df_unique['link']==link].index[0]],
                                         'link': [link],
