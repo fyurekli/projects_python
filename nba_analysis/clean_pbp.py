@@ -10,14 +10,13 @@ pd.options.display.float_format = '{:.4f}'.format
 #df_box = pd.read_csv('nba_analysis/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
 #df_players = pd.read_csv('nba_analysis/data/clean_data/combined/df_players_2001_2019.csv')
 #links = pd.read_csv('nba_analysis/links.csv')
-df_box = pd.read_csv('nba_analysis/data/df_box_scores_2004_2014.csv').rename(columns={'links':'link','name':'player'})
+df_box = pd.read_csv('nba_analysis/data/df_box_scores_2015_2019_clean.csv').rename(columns={'links':'link','name':'player'})
 df_pbp_raw = pd.read_csv('nba_analysis/data/df_pbp_2001_2019_raw.csv')
-players = pd.read_csv('nba_analysis/data/df_players_2001_2019.csv')
+players = pd.read_csv('nba_analysis/data/df_players_2001_2019_clean.csv')
 links = pd.read_csv('nba_analysis/data/df_links_1979_2019_clean.csv')
-#----------------------------------------------------------------------------------------------------------------------#
 #fix links
 df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
-df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
+#df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 links['link'] = links['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 #----------------------------------------------------------------------------------------------------------------------#
 def fix_players(dataframe):
@@ -78,7 +77,6 @@ def add_blank_rows(df, column, string=None, index_location=None):
     if string is None:
         index = [index_location]
         return add_blanks(df, index)
-
 #-----------------------------------------------------------------------------#
 def remove_strings(dataframe, column, *strings_to_remove):
     strings = []
@@ -88,9 +86,8 @@ def remove_strings(dataframe, column, *strings_to_remove):
     dataframe[column] = dataframe[column].str.replace('|'.join(strings),'',regex=True)
     dataframe[column] = [x.strip() for x in dataframe[column]]
     return dataframe[column]
-
 #-----------------------------------------------------------------------------#
-def fix_errors(dataframe):
+def fix_errors(dataframe, link):
     if link =='http://www.basketball-reference.com/boxscores/pbp/201803170NOP.html':
         dataframe.drop(804,inplace=True)
     if link =='http://www.basketball-reference.com/boxscores/pbp/201803040SAC.html':
@@ -132,8 +129,6 @@ def fix_errors(dataframe):
         dataframe = add_blank_rows(dataframe, 'text', index_location=2433)
         dataframe.reset_index()
     return dataframe
-
-#df = fix_errors(df)
 #-----------------------------------------------------------------------------#
 def add_quarter(dataframe, column, new_column, *values):
     dataframe[new_column] = None
@@ -171,12 +166,12 @@ def add_quarter(dataframe, column, new_column, *values):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-def add_team_subs(dataframe):
+def add_team_subs(dataframe, home_team, away_team):
     dataframe['team'] = np.where(dataframe['home_play'].str.contains('by Team'),home_team,
                         np.where(dataframe['away_play'].str.contains('by Team'),away_team,
                            None))
-    dataframe['play'] = dataframe['home_play'] + dataframe['away_play']
-    dataframe = dataframe[['time','period','play','score','team']]
+    dataframe['play'] = dataframe['home_play'].copy() + dataframe['away_play'].copy()
+    dataframe = dataframe[['time','period','play','score','team']].copy()
     #substitution column add-on
     dataframe['enters_game'] = np.where(dataframe['play'].str.contains('enters the game for'), 
                                         dataframe['play'].apply(lambda x: x.split(' enters ')[0]), 
@@ -184,20 +179,10 @@ def add_team_subs(dataframe):
     dataframe['exits_game'] = np.where(dataframe['play'].str.contains('enters the game for'), 
                                        dataframe['play'].apply(lambda x: x.split(' game for ')[1] if 'enters' in x else None), 
                                        None)            
-    dataframe['enters_game'] = dataframe['enters_game'].str.strip()
-    dataframe['exits_game'] = dataframe['exits_game'].str.strip()
+    dataframe['enters_game'] = dataframe['enters_game'].str.strip().copy()
+    dataframe['exits_game'] = dataframe['exits_game'].str.strip().copy()
     
     return dataframe
-
-#df = add_team_subs(df)
-#delete later
-#df['exits_game'].fillna('',inplace=True)
-#df['enters_game'].fillna('',inplace=True)
-#df['exits_game'] = df['exits_game'].apply(lambda x: x.split('.')[0])
-#df['exits_game'] = [x[:-1] if 'Team' not in x else x for x in df['exits_game']]
-#df['enters_game'] = df['enters_game'].apply(lambda x: x.split('.')[0])
-#df['enters_game'] = [x[:-1] if 'Team' not in x else x for x in df['enters_game']]     
-#df.replace('', np.nan, inplace=True) 
 #-----------------------------------------------------------------------------#
 plays = ('Defensive rebound',
          'Offensive rebound',
@@ -276,8 +261,7 @@ play_details = ('lost ball',
                 'Personal take foul',
                 'Technical foul',
                 'Flagrant foul type 1',
-                'Flagrant foul type 2')      
-
+                'Flagrant foul type 2')    
 #-----------------------------------------------------------------------------#            
 def pull_players(dataframe, column, new_column, *values, data='primary'):
     if data is 'primary':
@@ -354,8 +338,6 @@ def pull_data(dataframe):
     df['player'] = df['player'].apply(lambda x: x.strip())
     df['play_index'] = df.index
     return df
-
-#df = pull_data(df)
 #-----------------------------------------------------------------------------#
 def fix_score(dataframe):
     #fix blanks introduced by jump_ball
@@ -366,25 +348,19 @@ def fix_score(dataframe):
     dataframe['score_away'] = dataframe['score'].apply(lambda x: int(x.split('-')[1]))
     dataframe['score_diff'] = dataframe['score_home'] - dataframe['score_away']
     return dataframe
-
 #-----------------------------------------------------------------------------#
-def final_fixes(dataframe):
+def final_fixes(dataframe, date, link):
     dataframe = dataframe[['play_index','period','time','score','score_home','score_away', 'score_diff',
-                           'play_raw','player','team','play','distance','play_details','enters_game','exits_game']]
+                           'play_raw','player','team','play','distance','play_details','enters_game','exits_game']].copy()
     dataframe['date'] = date
     dataframe['link'] = link
     return dataframe
-
-#df = final_fixes(df)
-#delete:
-#df['player'] = df['player'].apply(lambda x: x.split('.')[0])
-#df['player'] = [x[:-1] if 'Team' not in x else x for x in df['player']]
 #-----------------------------------------------------------------------------#
-def get_starters(dataframe):
+def get_starters(dataframe, link):
     #Designate Starters and Bench Players
     #First five of each box score game is a starter, rest are bench players
-    dataframe = dataframe[dataframe['link']==link]
-    dataframe['changed'] = dataframe['team_key'].ne(dataframe['team_key'].shift())
+    dataframe = dataframe[dataframe['link']==link].copy()
+    dataframe['changed'] = dataframe['team_key'].ne(dataframe['team_key'].shift()).copy()
     changed_indeces = dataframe.loc[dataframe['changed']==True].index.tolist()
     changed_indeces = [[x, x + 1, x + 2, x + 3, x + 4] for x in changed_indeces]
     #flatten the list of lists into one long list
@@ -397,9 +373,6 @@ def get_starters(dataframe):
     dataframe['role'].fillna('bench',inplace=True)    
     dataframe.reset_index(drop=True,inplace=True)
     return dataframe
-
-#box = get_starters(df_box)
-#-----------------------------------------------------------------------------#
 #-----------------------------------------------------------------------------#
 #adding teams to df_pbp dataframe
 def merge_dfs(dataframe, dataframe2):
@@ -409,37 +382,30 @@ def merge_dfs(dataframe, dataframe2):
     dataframe['team'] = dataframe['team_y'] + dataframe['team_x']
     dataframe.drop(columns=['team_x','team_y'],inplace=True)
     return dataframe
-
-#df = merge_dfs(df, box)
 #-----------------------------------------------------------------------------#     
 #adding 'home'/'away' to df_pbp dataframe
 #getting the 'away'/'home' status of the game in order to merge it with the df_pbp dataframe
 #the reason this couldn't be merged above is because we had to include player, and 'Team' wasn't a variable in the df_box df
-def add_home_away(dataframe):
-    away_home_df = box.groupby(['link','team'])['team_key'].unique().reset_index()
+def add_home_away(dataframe, dataframe2):
+    away_home_df = dataframe2.groupby(['link','team'])['team_key'].unique().reset_index()
     away_home_df['team_key'] = away_home_df['team_key'].apply(lambda x: "".join(x))
     dataframe = pd.merge(dataframe, away_home_df, how='left',on=['link','team'])
     return dataframe
-
-#df = add_home_away(df)
 #-----------------------------------------------------------------------------#
- 
-def add_starters(dataframe):
-    starters = box[box['role']=='starter']
+def add_starters(dataframe, dataframe2):
+    starters = dataframe2[dataframe2['role']=='starter'].copy()
     starters = starters.groupby(['link','team'])['player'].unique().reset_index().rename(columns={'player':'starters'})
     
     dataframe = pd.merge(dataframe, starters, on=['link','team'])
-    dataframe['changed'] = dataframe['team'].ne(dataframe['team'].shift())
+    dataframe['changed'] = dataframe['team'].ne(dataframe['team'].shift()).copy()
     
     changed_indeces = dataframe.loc[dataframe['changed']==False].index.tolist()
-    dataframe['starters'].loc[changed_indeces] = np.nan
+    dataframe.loc[changed_indeces, 'starters'] = np.nan
     
     dataframe.drop(columns=['changed'],inplace=True)
     dataframe = pd.concat([dataframe, dataframe['starters'].dropna().apply(lambda x: 
                            x.tolist()).apply(lambda x: ','.join(x)).str.split(',', expand=True)],axis=1,join_axes=[dataframe.index])
     return dataframe
-
-#df = add_starters(df)
 #-----------------------------------------------------------------------------#
 #filling in who is in the game and when
 def fill_it_up(dataframe, *columns):
@@ -448,16 +414,13 @@ def fill_it_up(dataframe, *columns):
         for i in range(dataframe['exits_game'].notnull().sum()//2+1):
             try:
                 not_null = dataframe[dataframe[column].notnull()].index[i]
-                string = dataframe[column].loc[not_null]
+                string = dataframe[column].loc[not_null].copy()
                 index = dataframe[(dataframe['play'] == 'exits') & (dataframe['player'].str.contains(string))].loc[not_null:].index[0]
                 dataframe[column].iloc[index] = dataframe['enters_game'][index]
             except:
                 pass
         dataframe[column].fillna(method='ffill',inplace=True)
     return dataframe[column]
-    
-#columns = ('0','1','2','3','4')
-#fill_it_up(df, *columns)
 #-----------------------------------------------------------------------------#
 def last_step(dataframe):
     dataframe['starters'] = dataframe['0'] + ', ' + dataframe['1'] + ', ' + dataframe['2'] + ', ' + \
@@ -466,8 +429,6 @@ def last_step(dataframe):
     #Combine links dataframe with main dataframe
     dataframe = pd.merge(dataframe,links,how='left',on='link')
     return dataframe
-
-#last_step(df)
 #-----------------------------------------------------------------------------#
 def change_time(dataframe):
     dataframe['date'] = pd.to_datetime(dataframe['date'])
@@ -476,69 +437,84 @@ def change_time(dataframe):
     dataframe['time'] = [x + '000' for x in dataframe['time']]
     dataframe['time'] = pd.to_datetime(dataframe['time'], format="%M:%S.%f")
     return dataframe
-
-#change_time(df)
 #-----------------------------------------------------------------------------#
-df_all = pd.DataFrame()
-df_errors = pd.DataFrame()
-
-for link in tqdm(df_unique['link'][0:14]):
-    try:
-        df = df_pbp_raw[df_pbp_raw['link'].isin([link])]
-        df = df.reset_index(drop=True)
-        #set up some global variables
-        home_team = df['home_away'][0].split(',')[0]
-        away_team = df['home_away'][0].split(', ')[1]
-        date = df['date'][0]
-        
-        df = pd.DataFrame(df,columns=['text']).reset_index(drop=True)
-        df[df['text'].str.contains('timeout',na=False)] = df[df['text'].str.contains('timeout',na=False)].apply(lambda x: x + ' by Team')
-        #-----------------------------------------------------------------------------#
-        df = add_blank_rows(df, 'text', string='Jump')
-        #-----------------------------------------------------------------------------#
-        strings_to_remove = ['/players/' + x + '/' for x in (list(string.ascii_lowercase))]
-        strings_to_remove.extend(['colspan="5">','class=','center"','"','<td','td>','<','>','=','bbr-play-score',
-                                  'a href','/a','bbr-play-tie','bbr-play-leadchange', '.html','/'])
-        strings_to_remove.extend(players)
-        strings_to_remove = tuple(strings_to_remove)
-        remove_strings(df, 'text', *strings_to_remove)
-        #-----------------------------------------------------------------------------#
-        df = fix_errors(df)
-        #-----------------------------------------------------------------------------#
-        df = add_quarter(df, 'text', 'period', 
-                         '2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime',
-                         '3rd overtrime','4th overtime','5th overtime','6th overtime')
-        #-----------------------------------------------------------------------------#
-        df = add_team_subs(df)
-        #-----------------------------------------------------------------------------#
-        df = pull_data(df)
-        #-----------------------------------------------------------------------------#
-        df = fix_score(df)
-        #-----------------------------------------------------------------------------#
-        df = final_fixes(df)
-        #-----------------------------------------------------------------------------#
-        box = get_starters(df_box)
-        #-----------------------------------------------------------------------------#
-        df = merge_dfs(df, box)
-        #-----------------------------------------------------------------------------#
-        df = add_home_away(df)
-        #-----------------------------------------------------------------------------#
-        df = add_starters(df)
-        #-----------------------------------------------------------------------------#
-        fill_it_up(df, '0','1','2','3','4')
-        #-----------------------------------------------------------------------------#
-        df = last_step(df)
-        #-----------------------------------------------------------------------------#
-        change_time(df)
-        #-----------------------------------------------------------------------------#
-        df_all = df_all.append(df)
-        #-----------------------------------------------------------------------------#
-    except:
-        df_error = pd.DataFrame(data = {'row':[df_unique[df_unique['link']==link].index[0]],
-                                        'link': [link],
-                                        'error':'some_error'})
-        df_errors = df_errors.append(df_error)
-        print(link + 'error')
-        continue 
+def bulk_main(df_unique, season):
+    df_all = pd.DataFrame()
+    df_errors = pd.DataFrame()    
+    pbar = tqdm([season])
+    for char in pbar:
+        pbar.set_description("Processing %s" % char)
+    for link in tqdm(df_unique['link'][0:20]):
+        try:
+            df = df_pbp_raw[df_pbp_raw['link'].isin([link])]
+            df = df.reset_index(drop=True)
+            #set up some global variables
+            home_team = df['home_away'][0].split(',')[0]
+            away_team = df['home_away'][0].split(', ')[1]
+            date = df['date'][0]
+            df = pd.DataFrame(df,columns=['text']).reset_index(drop=True)
+            df[df['text'].str.contains('timeout',na=False)] = df[df['text'].str.contains('timeout',na=False)].apply(lambda x: x + ' by Team')
+            #-----------------------------------------------------------------------------#
+            df = add_blank_rows(df, 'text', string='Jump')
+            #-----------------------------------------------------------------------------#
+            strings_to_remove = ['/players/' + x + '/' for x in (list(string.ascii_lowercase))]
+            strings_to_remove.extend(['colspan="5">','class=','center"','"','<td','td>','<','>','=','bbr-play-score',
+                                      'a href','/a','bbr-play-tie','bbr-play-leadchange', '.html','/'])
+            strings_to_remove.extend(players)
+            strings_to_remove = tuple(strings_to_remove)
+            remove_strings(df, 'text', *strings_to_remove)
+            #-----------------------------------------------------------------------------#
+            df = fix_errors(df, link)
+            #-----------------------------------------------------------------------------#
+            df = add_quarter(df, 'text', 'period', 
+                             '2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime',
+                             '3rd overtime','4th overtime','5th overtime','6th overtime')
+            #-----------------------------------------------------------------------------#
+            df = add_team_subs(df, home_team, away_team)
+            #-----------------------------------------------------------------------------#
+            df = pull_data(df)
+            #-----------------------------------------------------------------------------#
+            df = fix_score(df)
+            #-----------------------------------------------------------------------------#
+            df = final_fixes(df, date, link)
+            #-----------------------------------------------------------------------------#
+            box = get_starters(df_box, link)
+            #-----------------------------------------------------------------------------#
+            df = merge_dfs(df, box)
+            #-----------------------------------------------------------------------------#
+            df = add_home_away(df, box)
+            #-----------------------------------------------------------------------------#
+            df = add_starters(df, box)
+            #-----------------------------------------------------------------------------#
+            fill_it_up(df, '0','1','2','3','4') 
+            #-----------------------------------------------------------------------------#
+            df = last_step(df)
+            #-----------------------------------------------------------------------------#
+            change_time(df)
+            #-----------------------------------------------------------------------------#
+            df_all = df_all.append(df)
+            #-----------------------------------------------------------------------------#
+        except:
+            df_error = pd.DataFrame(data = {'row':[df_unique[df_unique['link']==link].index[0]],
+                                            'link': [link],
+                                            'error':'some_error'})
+            df_errors = df_errors.append(df_error)
+            continue
+    return df_all, df_errors
 #-----------------------------------------------------------------------------#
-df_all.sort_values(by=['link','play_index'], inplace=True)
+def main(*seasons):
+    df = pd.DataFrame()
+    df_errors = pd.DataFrame()
+    for season in seasons:
+        filtered_df = df_pbp_raw[df_pbp_raw['season'] == season]
+        df_unique = get_unique(filtered_df)
+        df_all, df_errors = bulk_main(df_unique, season)
+        df = df.append(df_all)
+        df_errors = df_errors.append(df_errors)
+    return df, df_errors
+
+#-----------------------------------------------------------------------------#
+df, df_errors = main(2019,2018)
+
+    
+#df.sort_values(by=['link','play_index'], inplace=True)
