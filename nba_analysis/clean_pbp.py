@@ -10,7 +10,7 @@ pd.options.display.float_format = '{:.4f}'.format
 #df_box = pd.read_csv('nba_analysis/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
 #df_players = pd.read_csv('nba_analysis/data/clean_data/combined/df_players_2001_2019.csv')
 #links = pd.read_csv('nba_analysis/links.csv')
-df_box = pd.read_csv('nba_analysis/data/df_box_scores_2015_2019_clean.csv').rename(columns={'links':'link','name':'player'})
+df_box = pd.read_csv('nba_analysis/data/df_box_scores_2000_2018_clean.csv').rename(columns={'links':'link','name':'player'})
 df_pbp_raw = pd.read_csv('nba_analysis/data/df_pbp_2001_2019_raw.csv')
 players = pd.read_csv('nba_analysis/data/df_players_2001_2019_clean.csv')
 links = pd.read_csv('nba_analysis/data/df_links_1979_2019_clean.csv')
@@ -184,11 +184,7 @@ def add_team_subs(dataframe, home_team, away_team):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-plays = ('Defensive rebound',
-         'Offensive rebound',
-         'Turnover',
-         'Def 3 sec tech',
-         'foul',
+plays = ('Defensive rebound','Offensive rebound','Turnover','Def 3 sec tech','foul',
          'ejected',
          'enters',
          'full timeout',
@@ -444,7 +440,7 @@ def bulk_main(df_unique, season):
     pbar = tqdm([season])
     for char in pbar:
         pbar.set_description("Processing %s" % char)
-    for link in tqdm(df_unique['link'][0:20]):
+    for link in tqdm(df_unique['link']):
         try:
             df = df_pbp_raw[df_pbp_raw['link'].isin([link])]
             df = df.reset_index(drop=True)
@@ -503,18 +499,17 @@ def bulk_main(df_unique, season):
     return df_all, df_errors
 #-----------------------------------------------------------------------------#
 def main(*seasons):
-    df = pd.DataFrame()
     df_errors = pd.DataFrame()
     for season in seasons:
         filtered_df = df_pbp_raw[df_pbp_raw['season'] == season]
         df_unique = get_unique(filtered_df)
         df_all, df_errors = bulk_main(df_unique, season)
-        df = df.append(df_all)
+        df_all.to_csv('nba_analysis/df_complete_pbp_' + str(season) + '.csv', index=False)
         df_errors = df_errors.append(df_errors)
-    return df, df_errors
+    df_errors.to_csv('nba_analysis/df_complete_pbp_errors_' + str(seasons[0]) + '_' + str(seasons[-1]) + '.csv', index=False)
 
 #-----------------------------------------------------------------------------#
-df, df_errors = main(2019,2018)
-
+df_errors = main(2017, 2018)
+#df.to_csv('2013_2014.csv',index=False)
     
 #df.sort_values(by=['link','play_index'], inplace=True)
