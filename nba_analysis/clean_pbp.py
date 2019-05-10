@@ -5,6 +5,7 @@ from tqdm import tqdm
 from collections import Counter
 pd.set_option('display.max_columns',None)
 pd.options.display.float_format = '{:.4f}'.format
+
 #----------------------------------------------------------------------------------------------------------------------#
 #df_raw = pd.read_csv('nba_analysis/df_pbp_raw.csv')
 #df_box = pd.read_csv('nba_analysis/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
@@ -14,9 +15,15 @@ df_box = pd.read_csv('nba_analysis/data/df_box_scores_2000_2018_clean.csv').rena
 df_pbp_raw = pd.read_csv('nba_analysis/data/df_pbp_2001_2019_raw.csv')
 players = pd.read_csv('nba_analysis/data/df_players_2001_2019_clean.csv')
 links = pd.read_csv('nba_analysis/data/df_links_1979_2019_clean.csv')
+playoffs = pd.read_csv('nba_analysis/data/df_playoff_dates_1959_2019_clean.csv').rename(columns={'playoff_dates':'playoff_date'})
+#----------------------------------------------------------------------------------------------------------------------#
+df_box['team_key'] = np.where(df_box['team_key']=='home', 'away', 'home')
+df_box.to_csv('df_box_scores_2000_2018_clean.csv')
+#----------------------------------------------------------------------------------------------------------------------#
+playoffs['playoff_date'] = pd.to_datetime(playoffs['playoff_date'])
 #fix links
 df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
-#df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
+df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 links['link'] = links['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 #----------------------------------------------------------------------------------------------------------------------#
 def fix_players(dataframe):
@@ -434,6 +441,194 @@ def change_time(dataframe):
     dataframe['time'] = pd.to_datetime(dataframe['time'], format="%M:%S.%f")
     return dataframe
 #-----------------------------------------------------------------------------#
+def add_playoffs(dataframe):
+    dataframe = dataframe.merge(playoffs[['season','playoff_date']], how='left', on='season')
+    dataframe['time_of_year'] = np.where(dataframe['playoff_date'] >= dataframe['date'], 'regular_season', 'playoffs')
+    dataframe.drop(columns=['playoff_date'],inplace=True)
+    return dataframe
+#-----------------------------------------------------------------------------#
+def add_possessions(dataframe):
+    
+    def add_start_end(dataframe):  
+        rank_1 = ['assist', 'block', 'foul']
+        dataframe['possession_rank'] = np.where(dataframe['play'].str.contains('|'.join(rank_1)), 1, 2)
+        dataframe.sort_values(by=['link','period','time','possession_rank'], ascending=[False,True,False,True], inplace=True)
+        dataframe = dataframe.reset_index(drop=True)
+        
+        home = dataframe['team'].iloc[0]
+        away = dataframe['team'].iloc[1]
+        
+        rank_1 = ['assist', 'block', 'foul']
+        dataframe['possession_rank'] = np.where(dataframe['play'].str.contains('|'.join(rank_1)), 1, 2)
+        
+        ending_plays = ['turnover','makes 2-pt','makes 3-pt']
+        starting_plays = ['defensive rebound']
+        end_play_details = ['2 of 2', '3 of 3']
+    #-----------------------------------------------------------------------------#
+        #who won first possession
+        dataframe['home_possession'] = \
+        np.where((dataframe['play'].str.contains('|'.join(starting_plays)) & (dataframe['team'] == home)), 'start', 
+        np.where((dataframe['play_details'].str.contains('|'.join(end_play_details)) & (dataframe['team'] == home) & (dataframe['play'].str.contains('makes'))), 'end',
+        np.where((dataframe['play'].str.contains('|'.join(ending_plays)) & (dataframe['team'] == home)), 'end', None)))
+        
+        dataframe['away_possession'] = \
+        np.where((dataframe['play'].str.contains('|'.join(starting_plays)) & (dataframe['team'] == away)), 'start', 
+        np.where((dataframe['play_details'].str.contains('|'.join(end_play_details)) & (dataframe['team'] == away) & (dataframe['play'].str.contains('makes'))), 'end',
+        np.where((dataframe['play'].str.contains('|'.join(ending_plays)) & (dataframe['team'] == away)), 'end', None)))
+        
+    #-----------------------------------------------------------------------------#    
+        dataframe.loc[0, 'home_possession'] = \
+        np.where((dataframe['play_raw'].iloc[0].split('(')[1].split(' gains')[0] in dataframe['starters'].iloc[0]),
+                 'start', None)
+        
+        dataframe.loc[0, 'away_possession'] = \
+        np.where((dataframe['play_raw'].iloc[0].split('(')[1].split(' gains')[0] in dataframe['starters'].iloc[1]), 
+                 'start', None)
+        
+        dataframe['home_possession'] = np.where(dataframe['away_possession'] == 'end', 'start',
+                                         np.where((dataframe['away_possession'] == 'start'), 'end', 
+                                               dataframe['home_possession']))
+               
+        dataframe['away_possession'] = np.where(dataframe['home_possession'] == 'end', 'start',
+                                         np.where((dataframe['home_possession'] == 'start'), 'end', 
+                                               dataframe['away_possession']))
+        return dataframe
+    #-----------------------------------------------------------------------------#
+    period = '4th quarter'
+    
+    def add_play_number_time(dataframe):
+        for period in dataframe['period'].unique():
+
+            quarter_end = dataframe[period == dataframe['period']].index[-1] + .1
+            quarter_start = dataframe[period == dataframe['period']].index[-1] + .2
+            add_quarters = [quarter_end, quarter_start]
+            
+            columns = dataframe.columns
+            
+            df_to_append = pd.DataFrame(columns=columns, index = add_quarters)
+            df_to_append.loc[quarter_end] = dataframe.loc[quarter_end - .1]
+    
+            df_to_append.loc[quarter_end, 'time'] = pd.to_datetime('1900-01-01 00:00:00.0000')
+            df_to_append.loc[quarter_end, ['player','distance','play_details','enters_game','exits_game']] = None
+            df_to_append.loc[quarter_end, ['play_raw','play']] = 'end_of_period'
+            df_to_append['home_possession'] = np.where(df_to_append['home_possession'] == 'start', 'end', None)
+            df_to_append['away_possession'] = np.where(df_to_append['away_possession'] == 'start', 'end', None)
+            
+            possession = 'home' if dataframe.loc[0, 'home_possession'] == 'start' else 'away'
+            
+            #if period == '4th quarter':
+            #    dataframe = dataframe.append(df_to_append).sort_index().reset_index(drop=True)
+            #    continue
+            
+            #starting quarter
+            if ('overtime' not in period) or ('4th quarter' not in period):
+                if (period == '3rd quarter') & (possession == 'home'):
+                    period = '4th quarter'
+                    df_to_append.loc[quarter_start] = dataframe[(dataframe['team_key'] == 'home') & (dataframe['period']==period)].iloc[0]        
+
+                if (period == '2nd quarter') & (possession == 'home'):
+                    period = '3rd quarter'
+                    df_to_append.loc[quarter_start] = dataframe[(dataframe['team_key'] == 'away') & (dataframe['period']==period)].iloc[0]
+
+                if (period == '1st quarter') & (possession == 'home'):
+                    period = '2nd quarter'
+                    df_to_append.loc[quarter_start] = dataframe[(dataframe['team_key'] == 'away') & (dataframe['period']==period)].iloc[0]
+
+            if ('overtime' not in period) or ('4th quarter' not in period):
+                df_to_append.loc[quarter_start, 'time'] = pd.to_datetime('1900-01-01 00:12:00.0000')
+                df_to_append.loc[quarter_start, ['player','distance','play_details','enters_game','exits_game']] = None
+                df_to_append.loc[quarter_start, ['play_raw','play']] = 'start of period'   
+                
+            #alternate the quarters depending on who won possession.        
+                if '1st quarter' in period or '2nd quarter' in period:
+                    if possession == 'home': #if the hometeam won possession, away quarter end will be 'start'
+                        df_to_append.loc[quarter_start, 'home_possession'] = None
+                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+                    else: #if away team won possession
+                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                        df_to_append.loc[quarter_start, 'away_possession'] = None
+                        
+                if '3rd quarter' in period:
+                    if possession == 'home': #if the hometeam won possession, away quarter end will be 'start'
+                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                        df_to_append.loc[quarter_start, 'away_possession'] = None
+                    else: #if away team won possession
+                        df_to_append.loc[quarter_start, 'home_possession'] = None
+                        df_to_append.loc[quarter_start, 'away_possession'] = 'start' 
+                
+                dataframe = dataframe.append(df_to_append).sort_index().reset_index(drop=True)
+            
+        return dataframe
+#-----------------------------------------------------------------------------#
+    dataframe = df.copy()
+#-----------------------------------------------------------------------------#    
+    reg_df = dataframe[~dataframe['period'].str.contains('overtime')] 
+    if dataframe['period'].str.contains('1st overtime').any():
+        overtime_1 = dataframe[dataframe['period'].str.contains('1st overtime')]
+        dataframes = [reg_df, overtime_1]
+    if dataframe['period'].str.contains('2nd overtime').any():
+        overtime_2 = dataframe[dataframe['period'].str.contains('2nd overtime')]
+        dataframes = [reg_df, overtime_1, overtime_2]
+    if dataframe['period'].str.contains('3rd overtime').any():
+        overtime_3 = dataframe[dataframe['period'].str.contains('3rd overtime')]
+        dataframes = [reg_df, overtime_1, overtime_2, overtime_3]
+    if dataframe['period'].str.contains('4th overtime').any():
+        overtime_4 = dataframe[dataframe['period'].str.contains('4th overtime')]
+        dataframes = [reg_df, overtime_1, overtime_2, overtime_3, overtime_4]
+    if dataframe['period'].str.contains('5th overtime').any():
+        overtime_5 = dataframe[dataframe['period'].str.contains('5th overtime')]
+        dataframes = [reg_df, overtime_1, overtime_2, overtime_3, overtime_4, overtime_5]
+    if dataframe['period'].str.contains('6th overtime').any():    
+        overtime_6 = dataframe[dataframe['period'].str.contains('6th overtime')]
+        dataframes = [reg_df, overtime_1, overtime_2, overtime_3, overtime_4, overtime_5, overtime_6]        
+#-----------------------------------------------------------------------------#    
+    def columns_possession_number(dataframe, *columns):
+        for column in columns:
+            dataframe['possession_number'] = np.where(dataframe[column] == 'start', 1, None)
+            
+            for i in range(0,dataframe[dataframe['possession_number']==1]['possession_number'].count()):
+                location = dataframe[dataframe['possession_number']==1]['possession_number'].index[i]
+                dataframe.loc[location, 'possession_number2'] = dataframe.loc[0:location]['possession_number'].sum()
+            
+            dataframe[column] = np.where(dataframe['possession_number2'].notnull(), dataframe['possession_number2'], dataframe[column])
+            dataframe[column].fillna(method='ffill',inplace=True)
+            
+            dataframe[column] = np.where(dataframe[column]=='end', 
+                                                    dataframe[column].shift(1), dataframe[column])
+            dataframe[column] = np.where(dataframe[column] =='end', None, dataframe[column])
+            dataframe.drop(columns=['possession_number','possession_number2'], inplace=True)
+
+        return dataframe[column]
+    
+#-----------------------------------------------------------------------------#    
+    def possession_time(dataframe, *columns):
+        for column in columns:
+            for i in range(1, np.nanmax([x for x in dataframe[column] if type(x) == float]).astype(int) + 1):
+                index_start = dataframe[dataframe[column]==i].index[0]
+                index_end = dataframe[dataframe[column]==i].index[-1]
+                dataframe.loc[index_start:index_end, column + '_time'] = dataframe.loc[index_start, 'time'] - dataframe.loc[index_end, 'time']
+        return dataframe[column]    
+
+    return dataframe        
+#-----------------------------------------------------------------------------#        
+    def final(*dataframes):
+        final_dataframe = pd.DataFrame()
+        for dataframe in dataframes:
+            dataframe = add_start_end(dataframe)
+            dataframe = add_play_number_time(dataframe)
+            final_dataframe = final_dataframe.append(dataframe)
+            final_dataframe.dropna(subset=['period'],inplace=True)
+        final_dataframe = final_dataframe.reset_index(drop=True)
+        return final_dataframe            
+
+    dataframe = final(*dataframes)
+    
+    columns_possession_number(dataframe, 'home_possession', 'away_possession')
+    possession_time(dataframe, 'home_possession', 'away_possession')
+
+#-----------------------------------------------------------------------------#
+link = '201803140BOS'
+
 def bulk_main(df_unique, season):
     df_all = pd.DataFrame()
     df_errors = pd.DataFrame()    
@@ -488,7 +683,11 @@ def bulk_main(df_unique, season):
             #-----------------------------------------------------------------------------#
             change_time(df)
             #-----------------------------------------------------------------------------#
+            df = add_playoffs(df)
+            df = add_possessions(df)
+            #-----------------------------------------------------------------------------#
             df_all = df_all.append(df)
+            
             #-----------------------------------------------------------------------------#
         except:
             df_error = pd.DataFrame(data = {'row':[df_unique[df_unique['link']==link].index[0]],
