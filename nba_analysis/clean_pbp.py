@@ -6,7 +6,7 @@ from collections import Counter
 import logging
 pd.set_option('display.max_columns',None)
 pd.options.display.float_format = '{:.4f}'.format
-logging.basicConfig(filename = 'nba_pbp_errors.log')
+logging.basicConfig(filename = 'nba_pbp_errors.log', level = logging.DEBUG)
 #----------------------------------------------------------------------------------------------------------------------#
 #df_raw = pd.read_csv('nba_analysis/df_pbp_raw.csv')
 #df_box = pd.read_csv('nba_analysis/df_box_2009_2019.csv').rename(columns={'links':'link','name':'player'})
@@ -23,8 +23,8 @@ playoffs = pd.read_csv('nba_analysis/data/df_playoff_dates_1959_2019_clean.csv')
 #----------------------------------------------------------------------------------------------------------------------#
 playoffs['playoff_date'] = pd.to_datetime(playoffs['playoff_date'])
 #fix links
-df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
-df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
+#df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
+#df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 links['link'] = links['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 #----------------------------------------------------------------------------------------------------------------------#
 def fix_players(dataframe):
@@ -66,7 +66,10 @@ df_unique = get_unique(df_pbp_raw)
 #-----------------------------------------------------------------------------#
 def add_blank_rows(df, column, string=None, index_location=None):
     def add_blanks(df, index):
-        added_indeces = [[x + .1, x + .2, x + .3, x + .4] for x in index]
+        if string == None:
+            added_indeces = [[x + .1, x + .2, x + .3, x + .4, x + .5] for x in index]
+        else:
+            added_indeces = [[x + .1, x + .2, x + .3, x + .4] for x in index]
     
         flat_list = []
         for sublist in added_indeces:
@@ -96,72 +99,91 @@ def remove_strings(dataframe, column, *strings_to_remove):
     return dataframe[column]
 #-----------------------------------------------------------------------------#
 def get_possession(dataframe):
-    if dataframe['text'][0:10].str.contains('Jump Ball').any():
+    if dataframe['text'][0:5].str.contains('Jump').any():
         if dataframe['text'][10] == '':
             possession = 'away'
-        elif dataframe['text'][13] == '':
+        elif dataframe['text'][14] == '':
             possession = 'home'
-    else:
-        if dataframe['text'][8] == '':
+    elif 'Jump' not in dataframe['text'][0:5]:
+        logging.info(str(link) + ' no jump ball in first row') #checking for situations where this happens
+        if dataframe['text'][4] == '':
             possession = 'away'
-        elif dataframe['text'][11] == '':
+        elif dataframe['text'][8] == '':
             possession = 'home'
+            
     return possession
 #-----------------------------------------------------------------------------#
 def get_overtime_possessions(dataframe, overtime):
-    if dataframe['text'].str.contains('overtime').any():
-        index = dataframe[dataframe['text'].str.contains('overtime')].index[0]
-        if dataframe['text'][index + 3] == '':
-            overtime_possession = 'home'
-        else:
-            overtime_possession = 'away'
-        return overtime_possession
-    else:
-        pass
+    if dataframe['text'].str.contains(overtime).any():
+        index = dataframe[dataframe['text'].str.contains(overtime)].index[0]
+        if 'Jump' in dataframe['text'][index + 2]:
+            if dataframe['text'][index + 8] == '':
+                overtime_possession = 'home'
+            else:
+                overtime_possession = 'away'
+            return overtime_possession
+        elif 'Jump' not in dataframe['text'][index + 2]:
+            logging.info(str(link) + ' no jump ball in overtime row')
+            if dataframe['text'][index + 2] == '':
+                overtime_possession = 'home'
+            else:
+                overtime_possession = 'away'
+            return overtime_possession
 #-----------------------------------------------------------------------------#
 def fix_errors(dataframe, link):
-    if link =='http://www.basketball-reference.com/boxscores/pbp/201803170NOP.html':
-        dataframe.drop(804,inplace=True)
-    if link =='http://www.basketball-reference.com/boxscores/pbp/201803040SAC.html':
-        dataframe.drop(2492,inplace=True)
-    if link =='http://www.basketball-reference.com/boxscores/pbp/201812160DEN.html':
+    if link =='201803170NOP':
+        dataframe = add_blank_rows(dataframe, 'text', index_location=805)
+        dataframe.loc[810, 'text'] = 'Technical foul by rondora01' 
+        dataframe['text'].fillna('',inplace=True)
+        dataframe.reset_index(drop=True)
+    if link =='201803040SAC':
+        dataframe = add_blank_rows(dataframe, 'text', index_location=2493)
+        dataframe.loc[2498, 'text'] = 'Technical foul by randoza01' 
+        dataframe['text'].fillna('',inplace=True)
+        dataframe.reset_index(drop=True)        
+    if link =='201812160DEN':
         dataframe['text'][497] = dataframe['text'][497] + 'jokicni01'
-    if link =='http://www.basketball-reference.com/boxscores/pbp/201404210OKC.html':
+    if link =='201404210OKC':
         dataframe['text'][2689] = 'koufoko01 enters the game for gasolma01'
         dataframe['text'][2719] = dataframe['text'][2719] + 'koufoko01'
-    if link =='http://www.basketball-reference.com/boxscores/pbp/201502040ATL.html':
+    if link =='201502040ATL':
         dataframe['text'][2685] = 'butlera01 R. Butler enters the game for walljo01'
         dataframe['text'][2695] = 'jenkijo01 J. Jenkins enters the game for carrode01'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201312020SAS.html':
+    if link=='201312020SAS':
         dataframe['text'][2493] = 'anticpe01 enters the game for carrode01 D. Carroll'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201401130NYK.html':
+    if link=='201401130NYK':
         dataframe['text'][3031] = 'lenal01 enters the game for tuckepj01'
         dataframe['text'][3049] = ' tuckepj01 P. Tucker enters the game for lenal01'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201404190LAC.html':
+    if link=='201404190LAC':
         dataframe['text'][1687] = 'kuzmiog01 enters the game for speigma01 M. Speights'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201411130MEM.html':
+    if link=='201411130MEM':
         dataframe['text'][2721] = 'holliry01 enters the game for mclembe01 B. McLemore'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201404010DAL.html':
+    if link=='201404010DAL':
         dataframe['text'][2587] = 'armsthi01 enters the game for thompkl01 K. Thompson'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201402120GSW.html':
+    if link=='201402120GSW':
         dataframe['text'][2527] = 'kuzmiog01 enters the game for greendr01 D. Green'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201402080PHO.html':
+    if link=='201402080PHO':
         dataframe['text'][1435] = 'kuzmiog01 enters the game for iguodan01'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201411120PHO.html':
+    if link=='201411120PHO':
         dataframe['text'][2745] = 'jeffeco01 enters the game for johnsjo02'
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201501060SAS.html':
+    if link=='201501060SAS':
         dataframe['text'][3021] = 'anthojo01 enters the game for jennibr01'
     #if link=='http://www.basketball-reference.com/boxscores/pbp/201211260LAC.html':
     #    dataframe = add_blank_rows(df_4, 'text', 'Official timeout')      
     #if link=='http://www.basketball-reference.com/boxscores/pbp/201203160LAL.html':
     #    dataframe['text'].fillna('',inplace=True)
     #    dataframe = add_blank_rows(df_3, 'text', 'full timeout')      
-    if link=='http://www.basketball-reference.com/boxscores/pbp/201101220NJN.html':
+    if link=='201101220NJN':
         dataframe['text'].fillna('',inplace=True)
-        dataframe = add_blank_rows(dataframe, 'text', index_location=2433)
-        dataframe.reset_index()
+        dataframe = add_blank_rows(dataframe, 'text', index_location=2434)
+        dataframe.reset_index(drop=True)
     return dataframe
 #-----------------------------------------------------------------------------#
+#dataframe = df.copy()
+#column = 'text'
+#new_column = 'period'
+#values = '2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime','3rd overtime','4th overtime','5th  overtime','6th overtime'
+#t = dataframe[dataframe['period'] == '2nd quarter']
 def add_quarter(dataframe, column, new_column, *values):
     dataframe[new_column] = None
     to_remove = []
@@ -172,7 +194,7 @@ def add_quarter(dataframe, column, new_column, *values):
         dataframe[new_column] = np.where((dataframe[column].str.contains(value)) & (dataframe[new_column].isnull()),
                                           period, dataframe[new_column])
         value = 'End of'
-        dataframe[new_column] = np.where(dataframe[column].str.contains(value),'delete', dataframe[new_column])  
+        dataframe[new_column] = np.where(dataframe[column].str.contains(value),'delete', dataframe[new_column])
     #if the jump_ball isn't there and it says 'start of 1st quarter'
     if dataframe[new_column].iloc[1] and 'Start of 1st' in dataframe[new_column].iloc[1]:
         dataframe[new_column].loc[dataframe.index[dataframe[new_column].str.contains('1st quarter')==True]+1] = '1st quarter'
@@ -475,8 +497,6 @@ def add_playoffs(dataframe):
     dataframe.drop(columns=['playoff_date'],inplace=True)
     return dataframe
 #-----------------------------------------------------------------------------#
-dataframe = df.copy()
-
 def add_possessions(dataframe):
     def add_start_end(dataframe):  
         home = home_team
@@ -593,48 +613,48 @@ def add_possessions(dataframe):
                 df_to_append.loc[quarter_start, ['play_raw','play']] = 'start of period'  
                 df_to_append.loc[quarter_start, ['team','team_key','starters','0','1','2','3','4']] = None
                         
-            if ('overtime' in period) and (dataframe['play'][int(quarter_start):int(quarter_start) + 2].str.contains('jump ball|gains').any()):
-                
-                starting_index = dataframe[dataframe['period']==period].index[0]
-                
-                df_to_append.loc[quarter_start, 'home_possession'] = \
-                np.where((dataframe['play_raw'].iloc[starting_index].split('(')[1].split(' gains')[0] in dataframe[dataframe['period']==period]['starters'].iloc[0]),
-                         'start', None)
-                
-                df_to_append.loc[quarter_start, 'away_possession'] = \
-                np.where((dataframe['play_raw'].iloc[starting_index].split('(')[1].split(' gains')[0] in dataframe[dataframe['period']==period]['starters'].iloc[1]), 
-                         'start', None) 
-            else: 
-                if ('1st overtime' in period):
-                    if ot1_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
-                if ('2nd overtime' in period):
-                    if ot2_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
-                if ('3rd overtime' in period):
-                    if ot3_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
-                if ('4th overtime' in period):
-                    if ot4_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
-                if ('5th overtime' in period):
-                    if ot5_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'
-                if ('6th overtime' in period):
-                    if ot6_possession == 'home':
-                        df_to_append.loc[quarter_start, 'home_possession'] = 'start'
-                    else:
-                        df_to_append.loc[quarter_start, 'away_possession'] = 'start'              
+           # if ('overtime' in period) and (dataframe['play'][int(quarter_start):int(quarter_start) + 2].str.contains('jump ball|gains').any()):
+           #     
+           #     starting_index = dataframe[dataframe['period']==period].index[0]
+           #     
+           #     df_to_append.loc[quarter_start, 'home_possession'] = \
+           #     np.where((dataframe['play_raw'].iloc[starting_index].split('(')[1].split(' gains')[0] in dataframe[dataframe['period']==period]['starters'].iloc[0]),
+           #              'start', None)
+           #     
+           #     df_to_append.loc[quarter_start, 'away_possession'] = \
+           #     np.where((dataframe['play_raw'].iloc[starting_index].split('(')[1].split(' gains')[0] in dataframe[dataframe['period']==period]['starters'].iloc[1]), 
+           #              'start', None) 
+
+            if ('1st overtime' in period):
+                if ot1_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+            if ('2nd overtime' in period):
+                if ot2_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+            if ('3rd overtime' in period):
+                if ot3_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+            if ('4th overtime' in period):
+                if ot4_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+            if ('5th overtime' in period):
+                if ot5_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'
+            if ('6th overtime' in period):
+                if ot6_possession == 'home':
+                    df_to_append.loc[quarter_start, 'home_possession'] = 'start'
+                else:
+                    df_to_append.loc[quarter_start, 'away_possession'] = 'start'              
                         
             dataframe = dataframe.append(df_to_append).sort_index().reset_index(drop=True)
             dataframe.dropna(subset=['period'],inplace=True)
@@ -676,15 +696,15 @@ def add_possessions(dataframe):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-link = '201802230TOR'
-
 def bulk_main(df_unique, season):
     df_all = pd.DataFrame()  
     pbar = tqdm([season])
     for char in pbar:
         pbar.set_description("Processing %s" % char)
-    for link in tqdm(df_unique['link']):
+    for value in tqdm(df_unique['link']):
         try:
+            global link #creating a global link in order to use it in nested functions
+            link = value
             df = df_pbp_raw[df_pbp_raw['link'].isin([link])]
             df = df.reset_index(drop=True)
             #set up some global variables
@@ -767,12 +787,22 @@ def main(*seasons):
         df_all = bulk_main(df_unique, season)
         df_all.to_csv('nba_analysis/df_complete_pbp_' + str(season) + '.csv', index=False)
 #-----------------------------------------------------------------------------#
-main(2018)
+main(2016)
+
+#df[df['play'].str.contains('jump')]
 #df.to_csv('2013_2014.csv',index=False)
 #df_all = pd.read_csv('nba_analysis/df_complete_pbp_2018.csv')
-#df.drop(columns=['enters_game', 'exits_game', 'score_home','score_away','score_diff','date',
+#df_all.drop(columns=['enters_game', 'exits_game', 'score_home','score_away','score_diff','date',
 #       'play_index','starters', '0', '1', '2', '3', '4', 'season', 'key', 'time_of_year','possession_rank'],inplace=True)
 
+#test = df_all[df_all['link']=='201803310MIA']
+
 #df_all['link'].nunique()
+
+#jump = df_all[df_all['play'].str.contains('jump')]
+
+
+
+
 
 #df.sort_values(by=['link','play_index'], inplace=True)
