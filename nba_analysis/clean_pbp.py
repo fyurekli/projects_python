@@ -64,13 +64,13 @@ df_pbp_raw = get_iterable_df(df_pbp_raw, df_box, 'link')
 df_box = get_iterable_df(df_box, df_pbp_raw, 'link')
 df_unique = get_unique(df_pbp_raw)
 #-----------------------------------------------------------------------------#
-def add_blank_rows(df, column, string=None, index_location=None):
+def add_blank_rows(df, column, string=None, index_location=None, isblank=False):
     def add_blanks(df, index):
-        if string == None:
+        if isblank == True:
             added_indeces = [[x + .1, x + .2, x + .3, x + .4, x + .5] for x in index]
         else:
             added_indeces = [[x + .1, x + .2, x + .3, x + .4] for x in index]
-    
+
         flat_list = []
         for sublist in added_indeces:
             for item in sublist:
@@ -82,10 +82,13 @@ def add_blank_rows(df, column, string=None, index_location=None):
         df = df.append(df_to_append).sort_index().reset_index(drop=True).drop(0)
         
         return df
-    if index_location is None:
+    if index_location is None and isblank==False:
         index = df.loc[df[column].str.contains(string)].index.tolist()
         return add_blanks(df, index)
-    if string is None:
+    if string is None and isblank == False:
+        index = [index_location]
+        return add_blanks(df, index)
+    if isblank==True:
         index = [index_location]
         return add_blanks(df, index)
 #-----------------------------------------------------------------------------#
@@ -99,6 +102,12 @@ def remove_strings(dataframe, column, *strings_to_remove):
     return dataframe[column]
 #-----------------------------------------------------------------------------#
 def get_possession(dataframe):
+    if link == '200906110ORL':
+        dataframe.loc[1:14, 'text'] = '12:00.0','Start of 1st quarter','12:00.0','Jump ball: howardw01 vs. bynuman01','','','','','12:00:0','','','0-0','','Violation by howardw01 (jump ball)'
+        
+    if link == '200901090NOH':
+        dataframe.loc[1:14, 'text'] = '12:00.0','Start of 1st quarter','12:00.0','Jump ball: chandty01 vs. cambyma01','','','Violation by cambyma01 (jump ball)','','12:00:0','','','0-0','',''
+        
     if dataframe['text'][0:5].str.contains('Jump').any():
         if dataframe['text'][10] == '':
             possession = 'away'
@@ -109,7 +118,7 @@ def get_possession(dataframe):
         if dataframe['text'][4] == '':
             possession = 'away'
         elif dataframe['text'][8] == '':
-            possession = 'home'
+            possession = 'home'   
             
     return possession
 #-----------------------------------------------------------------------------#
@@ -132,51 +141,50 @@ def get_overtime_possessions(dataframe, overtime):
 #-----------------------------------------------------------------------------#
 def fix_errors(dataframe, link):
     if link =='201803170NOP':
-        dataframe = add_blank_rows(dataframe, 'text', index_location=805)
+        dataframe = add_blank_rows(dataframe, 'text', isblank=True, index_location=805)
         dataframe.loc[810, 'text'] = 'Technical foul by rondora01' 
         dataframe['text'].fillna('',inplace=True)
-        dataframe.reset_index(drop=True)
     if link =='201803040SAC':
-        dataframe = add_blank_rows(dataframe, 'text', index_location=2493)
+        dataframe = add_blank_rows(dataframe, 'text', isblank=True, index_location=2493)
         dataframe.loc[2498, 'text'] = 'Technical foul by randoza01' 
-        dataframe['text'].fillna('',inplace=True)
-        dataframe.reset_index(drop=True)        
+        dataframe['text'].fillna('',inplace=True)     
     if link =='201812160DEN':
         dataframe['text'][497] = dataframe['text'][497] + 'jokicni01'
     if link =='201404210OKC':
-        dataframe['text'][2689] = 'koufoko01 enters the game for gasolma01'
-        dataframe['text'][2719] = dataframe['text'][2719] + 'koufoko01'
+        dataframe['text'][2690] = 'koufoko01 enters the game for gasolma01'
+        dataframe['text'][2720] = dataframe['text'][2720] + ' koufoko01'
     if link =='201502040ATL':
-        dataframe['text'][2685] = 'butlera01 R. Butler enters the game for walljo01'
-        dataframe['text'][2695] = 'jenkijo01 J. Jenkins enters the game for carrode01'
+        dataframe['text'][2686] = 'butlera01 R. Butler enters the game for walljo01'
+        dataframe['text'][2696] = 'jenkijo01 J. Jenkins enters the game for carrode01'
     if link=='201312020SAS':
-        dataframe['text'][2493] = 'anticpe01 enters the game for carrode01 D. Carroll'
+        dataframe['text'][2494] = 'anticpe01 enters the game for carrode01 D. Carroll'
     if link=='201401130NYK':
-        dataframe['text'][3031] = 'lenal01 enters the game for tuckepj01'
-        dataframe['text'][3049] = ' tuckepj01 P. Tucker enters the game for lenal01'
+        dataframe['text'][3032] = 'lenal01 enters the game for tuckepj01'
+        dataframe['text'][3050] = ' tuckepj01 P. Tucker enters the game for lenal01'
     if link=='201404190LAC':
-        dataframe['text'][1687] = 'kuzmiog01 enters the game for speigma01 M. Speights'
+        dataframe['text'][1688] = 'kuzmiog01 enters the game for speigma01 M. Speights'
     if link=='201411130MEM':
-        dataframe['text'][2721] = 'holliry01 enters the game for mclembe01 B. McLemore'
+        dataframe['text'][2722] = 'holliry01 enters the game for mclembe01 B. McLemore'
     if link=='201404010DAL':
-        dataframe['text'][2587] = 'armsthi01 enters the game for thompkl01 K. Thompson'
+        dataframe['text'][2588] = 'armsthi01 enters the game for thompkl01 K. Thompson'
     if link=='201402120GSW':
-        dataframe['text'][2527] = 'kuzmiog01 enters the game for greendr01 D. Green'
+        dataframe['text'][2528] = 'kuzmiog01 enters the game for greendr01 D. Green'
     if link=='201402080PHO':
-        dataframe['text'][1435] = 'kuzmiog01 enters the game for iguodan01'
+        dataframe['text'][1436] = 'kuzmiog01 enters the game for iguodan01'
     if link=='201411120PHO':
-        dataframe['text'][2745] = 'jeffeco01 enters the game for johnsjo02'
+        dataframe['text'][2746] = 'jeffeco01 enters the game for johnsjo02'
     if link=='201501060SAS':
-        dataframe['text'][3021] = 'anthojo01 enters the game for jennibr01'
-    #if link=='http://www.basketball-reference.com/boxscores/pbp/201211260LAC.html':
-    #    dataframe = add_blank_rows(df_4, 'text', 'Official timeout')      
-    #if link=='http://www.basketball-reference.com/boxscores/pbp/201203160LAL.html':
-    #    dataframe['text'].fillna('',inplace=True)
-    #    dataframe = add_blank_rows(df_3, 'text', 'full timeout')      
-    if link=='201101220NJN':
+        dataframe['text'][3022] = 'anthojo01 enters the game for jennibr01'
+    if link=='201211260LAC':
+        dataframe = add_blank_rows(dataframe, 'text', index_location=1810)    
         dataframe['text'].fillna('',inplace=True)
+    if link=='201203160LAL':
+        dataframe['text'][1572] = 'LA Lakers full timeout by Team'
+        dataframe = add_blank_rows(dataframe, 'text', index_location=1571)     
+        dataframe['text'].fillna('',inplace=True)
+    if link=='201101220NJN':
         dataframe = add_blank_rows(dataframe, 'text', index_location=2434)
-        dataframe.reset_index(drop=True)
+        dataframe['text'].fillna('',inplace=True)
     return dataframe
 #-----------------------------------------------------------------------------#
 #dataframe = df.copy()
@@ -696,6 +704,8 @@ def add_possessions(dataframe):
     
     return dataframe
 #-----------------------------------------------------------------------------#
+value = '200906110ORL'
+
 def bulk_main(df_unique, season):
     df_all = pd.DataFrame()  
     pbar = tqdm([season])
@@ -744,7 +754,7 @@ def bulk_main(df_unique, season):
             #-----------------------------------------------------------------------------#
             df = add_quarter(df, 'text', 'period', 
                              '2nd quarter','3rd quarter','4th quarter','1st overtime','2nd overtime',
-                             '3rd overtime','4th overtime','5th  overtime','6th overtime')
+                             '3rd overtime','4th overtime','5th overtime','6th overtime')
             #-----------------------------------------------------------------------------#
             df = add_team_subs(df, home_team, away_team)
             #-----------------------------------------------------------------------------#
@@ -787,7 +797,7 @@ def main(*seasons):
         df_all = bulk_main(df_unique, season)
         df_all.to_csv('nba_analysis/df_complete_pbp_' + str(season) + '.csv', index=False)
 #-----------------------------------------------------------------------------#
-main(2016)
+main(2009)
 
 #df[df['play'].str.contains('jump')]
 #df.to_csv('2013_2014.csv',index=False)
