@@ -23,8 +23,8 @@ playoffs = pd.read_csv('nba_analysis/data/df_playoff_dates_1959_2019_clean.csv')
 #----------------------------------------------------------------------------------------------------------------------#
 playoffs['playoff_date'] = pd.to_datetime(playoffs['playoff_date'])
 #fix links
-#df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
-#df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
+df_box['link'] = df_box['link'].apply(lambda x: x.split('boxscores/')[1].split('.html')[0])
+df_pbp_raw['link'] = df_pbp_raw['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 links['link'] = links['link'].apply(lambda x: x.split('pbp/')[1].split('.html')[0])
 #----------------------------------------------------------------------------------------------------------------------#
 def fix_players(dataframe):
@@ -93,12 +93,22 @@ def add_blank_rows(df, column, string=None, index_location=None, isblank=False):
         return add_blanks(df, index)
 #-----------------------------------------------------------------------------#
 def remove_strings(dataframe, column, *strings_to_remove):
+    dataframe[column] = dataframe[column].str.replace('.html">',' ')
+    dataframe[column] = dataframe[column].str.replace('L. Mbah a Moute','')
+    
     strings = []
     for item in strings_to_remove:
         strings.append(item)
+        
     dataframe[column].fillna('',inplace=True)
     dataframe[column] = dataframe[column].str.replace('|'.join(strings),'',regex=True)
-    dataframe[column] = [x.strip() for x in dataframe[column]]
+    
+    dataframe[column] = dataframe[column].str.replace('. ','.', regex=False)
+    dataframe[column] = dataframe[column].str.replace('vs.','vs. ', regex=False)
+    dataframe[column] = dataframe[column].apply(lambda x: ' '.join(['' if '.' in word and word[0].isupper() else word for word in x.split()]))
+    dataframe[column] = dataframe[column].str.replace('  ',' ').str.strip()
+    dataframe[column] = [x + ')' if '(' in x and ')' not in x else x for x in dataframe[column]]
+    
     return dataframe[column]
 #-----------------------------------------------------------------------------#
 def get_possession(dataframe):
@@ -246,7 +256,10 @@ def add_team_subs(dataframe, home_team, away_team):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-plays = ('Defensive rebound','Offensive rebound','Turnover','Def 3 sec tech','foul',
+#test = df_pbp_raw[df_pbp_raw['text'].str.contains('Violation')]
+plays = ('Defensive rebound','Offensive rebound','Turnover','foul',
+         'Def 3 sec tech',
+         '3 sec tech'
          'ejected',
          'enters',
          'full timeout',
@@ -265,10 +278,8 @@ plays = ('Defensive rebound','Offensive rebound','Turnover','Def 3 sec tech','fo
          'misses technical free throw',
          'makes free throw', 
          'misses free throw',
-         '3 sec tech',
-         'def goaltending',
-         'defensive goaltending',
-         'vs.')
+         'vs.',
+         'Violation')
 
 secondary_plays = ('assist',
                    'drawn',
@@ -286,15 +297,22 @@ play_details = ('lost ball',
                 'discontinued dribble',
                 'traveling',
                 'illegal assist',
+                'illegal defense',
                 'back court',                
                 '3 sec',              
+                'def goaltending',
+                'defensive goaltending',                
                 'offensive goaltending',
                 'off goaltending',
+                'kicked ball',
+                'delay of game',
+                'double dribble',
                 'dbl dribble',
                 'palming',              
                 '5 sec',
                 'illegal screen',
                 'lane violation',
+                'lane',
                 'jump ball violation',     
                 '8 sec',
                 'swinging elbows',          
@@ -319,7 +337,8 @@ play_details = ('lost ball',
                 'Personal take foul',
                 'Technical foul',
                 'Flagrant foul type 1',
-                'Flagrant foul type 2')    
+                'Flagrant foul type 2')
+
 #-----------------------------------------------------------------------------#            
 def pull_players(dataframe, column, new_column, *values, data='primary'):
     if data is 'primary':
@@ -459,7 +478,7 @@ def add_starters(dataframe, dataframe2):
     
     dataframe = pd.merge(dataframe, starters, on=['link','team'])
     dataframe['changed'] = dataframe['team'].ne(dataframe['team'].shift()).copy()
-    
+   
     changed_indeces = dataframe.loc[dataframe['changed']==False].index.tolist()
     dataframe.loc[changed_indeces, 'starters'] = np.nan
     
@@ -468,20 +487,108 @@ def add_starters(dataframe, dataframe2):
                            x.tolist()).apply(lambda x: ','.join(x)).str.split(',', expand=True)],axis=1,join_axes=[dataframe.index])
     return dataframe
 #-----------------------------------------------------------------------------#
+#dataframe = df.copy()
+def more_errors(dataframe):
+    if link == '201711290DAL':
+        dataframe.loc[636, ['team']] = 'Dallas Mavericks'
+        dataframe.loc[642, ['team']] = 'Dallas Mavericks'
+    if link == '201711110UTA':
+        dataframe.loc[589, ['team']] = 'Brooklyn Nets'
+        dataframe.loc[591, ['team']] = 'Brooklyn Nets'
+    if link =='201712230IND':
+        dataframe = dataframe[dataframe['play_index'] != 490]
+        dataframe = dataframe[dataframe['play_index'] != 489]
+        dataframe = dataframe[dataframe['play_index'] != 493]
+        dataframe = dataframe[dataframe['play_index'] != 488]
+    return dataframe
+#-----------------------------------------------------------------------------#
 #filling in who is in the game and when
-def fill_it_up(dataframe, *columns):
-    dataframe.columns = dataframe.columns.astype(str)
-    for column in columns:
-        for i in range(dataframe['exits_game'].notnull().sum()//2+1):
-            try:
-                not_null = dataframe[dataframe[column].notnull()].index[i]
-                string = dataframe[column].loc[not_null].copy()
-                index = dataframe[(dataframe['play'] == 'exits') & (dataframe['player'].str.contains(string))].loc[not_null:].index[0]
-                dataframe[column].iloc[index] = dataframe['enters_game'][index]
-            except:
-                pass
-        dataframe[column].fillna(method='ffill',inplace=True)
-    return dataframe[column]
+#-----------------------------------------------------------------------------#
+#test = df.copy()
+#dataframe = test.copy()
+#column = '2'
+#period = '3rd quarter'
+#team_key = 'home'
+def fill_it_up(dataframe):
+    columns = ['0','1','2','3','4']
+    dataframe[columns] = None
+#-----------------------------------------------------------------------------#
+    periods = dataframe['period'].unique().tolist()
+    df_period = pd.DataFrame()
+    for period in periods:
+        df_1 = dataframe[dataframe['period']==period].copy()
+        df_team_key = pd.DataFrame()
+        for team_key in ['home','away']:
+            #print(team_key)
+            df = df_1[df_1['team_key']==team_key].copy()
+            df.reset_index(drop=True,inplace=True)
+#-----------------------------------------------------------------------------#    
+        #get all the indeces where player substitutions occur
+            indeces = df[df['enters_game'].notnull()].index.tolist()
+            del indeces[1::2]#get rid of the hits that happen twice
+            
+            #if the substituted player doesn't exist in any of the other columns, put it into the selected column
+            for column in columns:
+                if len(indeces) > 0:
+                    if pd.isna(df.loc[indeces[0], column]): #is the column before selected index empty?
+                        #is the player that exits at that index in any of the other columns?
+                        if df.loc[indeces[0], 'exits_game'] != df.loc[indeces[0], ['0','1','2','3','4']].any():
+                            df.loc[indeces[0], column] = df.loc[indeces[0], 'exits_game']
+                            df[column].fillna(method='bfill',inplace=True)
+                            df.loc[indeces[0] + 1, column] = df.loc[indeces[0] + 1, 'enters_game']
+                            
+                        #does the player exit the game in that quarter?
+                        exit_indeces = indeces.copy()
+                        while df.loc[exit_indeces[0]:,'exits_game'].isin([df.loc[exit_indeces[0] + 1, column]]).any():
+                            #get the index of where the player is substituted out of the game
+                            exit_df = df.loc[exit_indeces[0]:,'exits_game']
+                            exit_index = exit_df[exit_df == df.loc[exit_indeces[0] + 1, column]].index.tolist()
+
+                            #fill in the corresponding index where the player is subtituted out of the game
+                            df.loc[exit_index[0], column] = df.loc[exit_index[0], 'exits_game']
+                            df.loc[exit_index[1], column] = df.loc[exit_index[1], 'enters_game']  
+                        
+                            #filter the numbers after the exit index out of the for loop 
+                            exit_last_index = exit_indeces.index(exit_index[0])
+                            indeces = [x for x in indeces if x != exit_index[0]]
+                            #exit_indeces = indeces.copy()
+                            exit_indeces = exit_indeces[exit_last_index:].copy()
+                            if len(exit_indeces) < 1:
+                                df[column].fillna(method='ffill',inplace=True)
+                                break
+                            #if df.loc[exit_indeces[0]:,'exits_game'].isin([df.loc[exit_indeces[0] + 1, column]]).any():
+                            #    break
+                              #  df[column].fillna(method='ffill',inplace=True)
+                               # break                        
+                        df[column].fillna(method='ffill',inplace=True)
+                        if df[column].notnull().all(): #if the column is full, move to the next index
+                            indeces = indeces[1:].copy() #filter out a number from the index
+                            #print(column)
+                            #print(indeces)
+            #check if any of the columns are empty (didn't have any subsititutions)
+           
+            if df[columns].isnull().any().any():
+                empty_columns = []
+                for column in columns:
+                    if df[column].isnull().any():
+                        empty_columns.append(column)
+
+                        
+                for column in empty_columns: #iterate through empty columns
+                    for i in range(df.index[1],df.index[-1]):
+                        if df.loc[i, 'player'] != 'Team': #make sure team isn't included
+                            if ~df.loc[i + 1, ['0','1','2','3','4']].isin([df.loc[i, 'player']]).any() and ~df.loc[i - 1, ['0','1','2','3','4']].isin([df.loc[i, 'player']]).any(): #
+                                df.loc[i, column] = df.loc[i, 'player']
+                                df[column].fillna(method='ffill',inplace=True)
+                                df[column].fillna(method='bfill',inplace=True)
+                                break
+                            else:
+                                continue
+                        else:
+                            continue         
+            df_team_key = df_team_key.append(df)
+        df_period = df_period.append(df_team_key)
+    return df_period
 #-----------------------------------------------------------------------------#
 def last_step(dataframe):
     dataframe['starters'] = dataframe['0'] + ', ' + dataframe['1'] + ', ' + dataframe['2'] + ', ' + \
@@ -704,8 +811,7 @@ def add_possessions(dataframe):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-value = '200906110ORL'
-
+value = '201711110UTA'
 def bulk_main(df_unique, season):
     df_all = pd.DataFrame()  
     pbar = tqdm([season])
@@ -731,8 +837,10 @@ def bulk_main(df_unique, season):
             strings_to_remove = ['/players/' + x + '/' for x in (list(string.ascii_lowercase))]
             strings_to_remove.extend(['colspan="5">','class=','center"','"','<td','td>','<','>','=','bbr-play-score',
                                       'a href','/a','bbr-play-tie','bbr-play-leadchange', '.html','/'])
-            strings_to_remove.extend(players)
             strings_to_remove = tuple(strings_to_remove)
+        
+            #strings_to_remove.extend(players)
+
             remove_strings(df, 'text', *strings_to_remove)
             #-----------------------------------------------------------------------------#
             global possession
@@ -768,11 +876,13 @@ def bulk_main(df_unique, season):
             #-----------------------------------------------------------------------------#
             df = merge_dfs(df, box)
             #-----------------------------------------------------------------------------#
+            df = more_errors(df)
             df = add_home_away(df, box)
             #-----------------------------------------------------------------------------#
             df = add_starters(df, box)
             #-----------------------------------------------------------------------------#
-            fill_it_up(df, '0','1','2','3','4') 
+            df.columns = df.columns.astype(str)
+            df = fill_it_up(df) 
             #-----------------------------------------------------------------------------#
             df = last_step(df)
             #-----------------------------------------------------------------------------#
@@ -797,13 +907,17 @@ def main(*seasons):
         df_all = bulk_main(df_unique, season)
         df_all.to_csv('nba_analysis/df_complete_pbp_' + str(season) + '.csv', index=False)
 #-----------------------------------------------------------------------------#
-main(2009)
+main(2018)
 
 #df[df['play'].str.contains('jump')]
 #df.to_csv('2013_2014.csv',index=False)
 #df_all = pd.read_csv('nba_analysis/df_complete_pbp_2018.csv')
+
+#df = df.sort_values(by=['link','team_key'])
+
 #df_all.drop(columns=['enters_game', 'exits_game', 'score_home','score_away','score_diff','date',
 #       'play_index','starters', '0', '1', '2', '3', '4', 'season', 'key', 'time_of_year','possession_rank'],inplace=True)
+
 
 #test = df_all[df_all['link']=='201803310MIA']
 
