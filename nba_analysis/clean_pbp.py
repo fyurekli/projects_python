@@ -95,7 +95,10 @@ def add_blank_rows(df, column, string=None, index_location=None, isblank=False):
 def remove_strings(dataframe, column, *strings_to_remove):
     dataframe[column] = dataframe[column].str.replace('.html">',' ')
     dataframe[column] = dataframe[column].str.replace('L. Mbah a Moute','')
-    
+    dataframe[column] = dataframe[column].str.replace('M. World Peace','')
+    dataframe[column] = dataframe[column].str.replace('N. De Colo', '')
+    dataframe[column] = dataframe[column].str.replace('III','')
+    dataframe[column] = dataframe[column].str.replace('II','')
     strings = []
     for item in strings_to_remove:
         strings.append(item)
@@ -195,6 +198,19 @@ def fix_errors(dataframe, link):
     if link=='201101220NJN':
         dataframe = add_blank_rows(dataframe, 'text', index_location=2434)
         dataframe['text'].fillna('',inplace=True)
+    if link=='201612030GSW':
+        dataframe.loc[1656, 'text'] = 'lenal01 enters the game for bendedr01'
+        dataframe.loc[1662, 'text'] = 'bendedr01 enters the game for chandty01'
+    if link=='201702100MIL':
+        dataframe.loc[418, 'text'] = 'clarkjo01 enters the game for denglu01'
+        dataframe.loc[442, 'text'] = 'denglu01 enters the game for randlju01'      
+    if link=='201611020LAC':
+        dataframe.loc[3, 'text'] = '12:00.0'
+        dataframe.loc[4, 'text'] = 'Jump ball: adamsst01 vs. jordade01 (paulch01 gains possession)'     
+        dataframe.loc[8, 'text'] = ''  
+        dataframe.loc[9, 'text'] = '11:34.0'
+        dataframe.loc[10, 'text'] = ''        
+        dataframe.loc[14, 'text'] = 'paulch01 misses 3-pt jump shot from 26 ft'         
     return dataframe
 #-----------------------------------------------------------------------------#
 #dataframe = df.copy()
@@ -452,6 +468,9 @@ def get_starters(dataframe, link):
     dataframe = pd.concat([dataframe,starters],axis=1,join_axes=[dataframe.index])
     dataframe['role'].fillna('bench',inplace=True)    
     dataframe.reset_index(drop=True,inplace=True)
+    if dataframe.shape[0] > 40:
+        logging.info(str(link) + 'box_score was not filtered')
+        dataframe.drop_duplicates(subset=['player'],inplace=True)
     return dataframe
 #-----------------------------------------------------------------------------#
 #adding teams to df_pbp dataframe
@@ -495,11 +514,17 @@ def more_errors(dataframe):
     if link == '201711110UTA':
         dataframe.loc[589, ['team']] = 'Brooklyn Nets'
         dataframe.loc[591, ['team']] = 'Brooklyn Nets'
+    if link == '201701190MIA':
+        dataframe.loc[547, ['team']] = 'Dallas Mavericks'
+        dataframe.loc[553, ['team']] = 'Dallas Mavericks'      
     if link =='201712230IND':
         dataframe = dataframe[dataframe['play_index'] != 490]
         dataframe = dataframe[dataframe['play_index'] != 489]
         dataframe = dataframe[dataframe['play_index'] != 493]
         dataframe = dataframe[dataframe['play_index'] != 488]
+    if link =='201701160DEN':
+        dataframe.loc[463, ['team']] = 'Orlando Magic'
+        dataframe.loc[472, ['team']] = 'Orlando Magic'       
     return dataframe
 #-----------------------------------------------------------------------------#
 #filling in who is in the game and when
@@ -811,7 +836,7 @@ def add_possessions(dataframe):
     
     return dataframe
 #-----------------------------------------------------------------------------#
-value = '201711110UTA'
+value = '201511110CHO'
 def bulk_main(df_unique, season):
     df_all = pd.DataFrame()  
     pbar = tqdm([season])
@@ -907,13 +932,43 @@ def main(*seasons):
         df_all = bulk_main(df_unique, season)
         df_all.to_csv('nba_analysis/df_complete_pbp_' + str(season) + '.csv', index=False)
 #-----------------------------------------------------------------------------#
-main(2018)
+main(2012, 2013, 2014)
+#-----------------------------------------------------------------------------#
 
-#df[df['play'].str.contains('jump')]
-#df.to_csv('2013_2014.csv',index=False)
+#import pandas as pd
+#import numpy as np
+#import completed dataframe
 #df_all = pd.read_csv('nba_analysis/df_complete_pbp_2018.csv')
+#df_all = df_all.sort_values(by=['link','team_key'])
 
-#df = df.sort_values(by=['link','team_key'])
+#check if same player is in more than one column at a time
+#def test(dataframe):
+#    problem_rows = []
+#    dataframe.dropna(subset=['starters'],inplace=True)
+#    for i in tqdm(range(len(dataframe))):
+#        if dataframe.iloc[i][['0','1','2','3','4']].nunique() < 5:
+#            problem_rows.append(i)
+#        else:
+#            continue
+#    if problem_rows == 0:
+#        return 'all good!'
+#    else:
+#        return problem_rows
+ 
+
+
+
+
+
+#-----------------------------------------------------------------------------#
+#problem = test(df_all)
+#problem2 = test(check)
+
+#check = df_all.loc[problem]
+#-----------------------------------------------------------------------------#
+#-----------------------------------------------------------------------------#
+#-----------------------------------------------------------------------------#
+#test = df_all[df_all['play_details'].str.contains('3 sec', na=False)]
 
 #df_all.drop(columns=['enters_game', 'exits_game', 'score_home','score_away','score_diff','date',
 #       'play_index','starters', '0', '1', '2', '3', '4', 'season', 'key', 'time_of_year','possession_rank'],inplace=True)
@@ -925,7 +980,10 @@ main(2018)
 
 #jump = df_all[df_all['play'].str.contains('jump')]
 
+#test1 = df_pbp_raw[df_pbp_raw['season']==2018]
+#test2 = test1[test1['text'].str.contains('Violation')]
 
+#test = df_all[df_all['play'].str.contains('violation', na=False)]
 
 
 
